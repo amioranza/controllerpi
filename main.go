@@ -1,31 +1,134 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/gorilla/mux"
+
+	appsv1 "k8s.io/api/apps/v1"
+	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+type App struct {
+	Node   string `json:"node"`
+	Pin    string `json:"pin"`
+	Status string `json:"status"`
+}
+
+func int32Ptr(i int32) *int32 { return &i }
+
+func DeployApp(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	var app App
+	_ = json.NewDecoder(r.Body).Decode(&app)
+	app.Node = params["node"]
+	app.Pin = params["pin"]
+	app.Status = params["status"]
+	log.Printf("Params: %s\n", app.Status)
+
+	//config kubernetes access, intra cluster
+	config, err := clientcmd.BuildConfigFromFlags("", "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	clientset, err := kubernetes.NewForConfig(config)
+	deploymentsClient := clientset.AppsV1().Deployments(apiv1.NamespaceDefault)
+
+	if app.Status == "true" {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "led-deployment",
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: int32Ptr(2),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"app": "led",
+					},
+				},
+				Template: apiv1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							"app": "led",
+						},
+					},
+					Spec: apiv1.PodSpec{
+						Containers: []apiv1.Container{
+							{
+								Name:  "led",
+								Image: "nginx:1.12",
+								Ports: []apiv1.ContainerPort{
+									{
+										Name:          "http",
+										Protocol:      apiv1.ProtocolTCP,
+										ContainerPort: 80,
+									},
+								},
+							},
+						},
+						NodeSelector: map[string]string{
+							"app": "led",
+						},
+					},
+				},
+			},
+		}
+		// Create Deployment
+		fmt.Println("Creating deployment...")
+		result, err := deploymentsClient.Create(deployment)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("Created deployment %q.\n", result.GetObjectMeta().GetName())
+
+	} else {
+		fmt.Println("Deleting deployment...")
+		deletePolicy := metav1.DeletePropagationForeground
+		if err := deploymentsClient.Delete("led-deployment", &metav1.DeleteOptions{
+			PropagationPolicy: &deletePolicy,
+		}); err != nil {
+			panic(err)
+		}
+		fmt.Println("Deleted deployment.")
+	}
+
+}
+
+func SayHello(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "<html><h1>HELLO from MimiServer</h1></html>")
+}
 
 // This program lists the pods in a cluster equivalent to
 //
 // kubectl get pods
 //
 func main() {
+	go func() { // new restfull api server
+		router := mux.NewRouter()
+		router.HandleFunc("/", DeployApp).Methods("POST")
+		router.HandleFunc("/", SayHello).Methods("GET")
+		log.Fatal(http.ListenAndServe(":8000", router))
+	}()
+
 	var ns string
 	flag.StringVar(&ns, "namespace", "", "namespace")
 
 	// Bootstrap k8s configuration from local 	Kubernetes config file
 	kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
 	log.Println("Using kubeconfig file: ", kubeconfig)
-	//config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	config, err := clientcmd.BuildConfigFromFlags("", "")
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	// config, err := clientcmd.BuildConfigFromFlags("", "")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,6 +138,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	for {
 		pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{})
 		if err != nil {
