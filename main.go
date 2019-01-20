@@ -37,13 +37,17 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 	// Bootstrap k8s configuration from local 	Kubernetes config file
 	kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
 	log.Println("Using kubeconfig file: ", kubeconfig)
+
 	// config kubernetes access, ext cluster, uncomment below
-	//config kubernetes access, intra cluster, uncomment below
 	// config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+
+	// config kubernetes access, intra cluster, uncomment below
 	config, err := clientcmd.BuildConfigFromFlags("", "")
+
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	clientset, err := kubernetes.NewForConfig(config)
 	deploymentsClient := clientset.AppsV1().Deployments("pi-system")
 
