@@ -29,8 +29,6 @@ func int32Ptr(i int32) *int32 { return &i }
 func DeployApp(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Raw params: %v", mux.Vars(r))
 	params := mux.Vars(r)
-	// node := params["node"]
-	// pin := params["pin"]
 	status := params["status"]
 	log.Printf("Params: %s\n", params)
 
@@ -51,7 +49,22 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 	clientset, err := kubernetes.NewForConfig(config)
 	deploymentsClient := clientset.AppsV1().Deployments("pi-system")
 
+	nodes, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
+	if err != nil {
+		log.Fatalln("failed to get nodes:", err)
+	}
+
 	if status == "true" {
+		for _, node := range nodes.Items {
+			if node.GetName() == params["node"] {
+				node.Labels["app"] = "led"
+				fmt.Printf("%s - %s\n", node.GetName(), node.GetLabels())
+				_, err := clientset.Core().Nodes().Update(&node)
+				if err != nil {
+					log.Fatalln("failed to get nodes:", err)
+				}
+			}
+		}
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "led-deployment",
@@ -99,14 +112,21 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Created deployment %q.\n", result.GetObjectMeta().GetName())
 
 	} else {
+		for _, node := range nodes.Items {
+			if node.GetName() == params["node"] {
+				node.Labels["app"] = ""
+				fmt.Printf("%s - %s\n", node.GetName(), node.GetLabels())
+				_, err := clientset.Core().Nodes().Update(&node)
+				if err != nil {
+					log.Fatalln("failed to get nodes:", err)
+				}
+			}
+		}
 		fmt.Println("Deleting deployment...")
 		deletePolicy := metav1.DeletePropagationForeground
 		if err := deploymentsClient.Delete("led-deployment", &metav1.DeleteOptions{
 			PropagationPolicy: &deletePolicy,
 		}); err != nil {
-			// log.Println("ERROU!!!")
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, "<html><h1>ERROU!!!</h1></html>")
 			panic(err)
 		}
 		fmt.Println("Deleted deployment.")
@@ -132,7 +152,7 @@ func main() {
 		// Bootstrap k8s configuration from local 	Kubernetes config file
 		kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
 		log.Println("Using kubeconfig file: ", kubeconfig)
-		//config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+		// config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 		config, err := clientcmd.BuildConfigFromFlags("", "")
 		if err != nil {
 			log.Fatal(err)
@@ -170,7 +190,7 @@ func main() {
 	}()
 	// new restfull api server
 	router := mux.NewRouter()
-	router.HandleFunc("/{pin}/{status}", DeployApp).Methods("POST")
+	router.HandleFunc("/{pin}/{status}/{node}", DeployApp).Methods("POST")
 	router.HandleFunc("/", SayHello).Methods("GET")
 	log.Fatal(http.ListenAndServe(":8000", router))
 
