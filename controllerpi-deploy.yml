@@ -113,5 +113,6 @@ spec:
   ports:
     - port: 8000
       targetPort: 8000
+      nodePort: 32185
   selector:
     app: controllerpi

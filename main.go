@@ -20,6 +20,7 @@ import (
 )
 
 func int32Ptr(i int32) *int32 { return &i }
+func boolPtr(b bool) *bool    { return &b }
 
 func DeployApp(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Raw params: %v", mux.Vars(r))
@@ -42,7 +43,7 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 	if status == "true" {
 		for _, node := range nodes.Items {
 			if node.GetName() == params["node"] {
-				node.Labels["app"] = "led"
+				node.Labels["app"] = "blinkerpi"
 				fmt.Printf("%s - %s\n", node.GetName(), node.GetLabels())
 				_, err := clientset.Core().Nodes().Update(&node)
 				if err != nil {
@@ -52,26 +53,26 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 		}
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "led-deployment",
+				Name: "blinker-deployment",
 			},
 			Spec: appsv1.DeploymentSpec{
 				Replicas: int32Ptr(1),
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
-						"app": "led",
+						"app": "blinkerpi",
 					},
 				},
 				Template: apiv1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
-							"app": "led",
+							"app": "blinkerpi",
 						},
 					},
 					Spec: apiv1.PodSpec{
 						Containers: []apiv1.Container{
 							{
-								Name:  "led",
-								Image: "nginx:1.12",
+								Name:  "blinker",
+								Image: "amioranza/blinkerpi:v0",
 								Ports: []apiv1.ContainerPort{
 									{
 										Name:          "http",
@@ -79,10 +80,41 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 										ContainerPort: 80,
 									},
 								},
+								SecurityContext: &apiv1.SecurityContext{
+									Privileged: boolPtr(true),
+								},
+								VolumeMounts: []apiv1.VolumeMount{
+									{
+										Name:      "mem",
+										MountPath: "/dev/mem",
+									},
+									{
+										Name:      "gpiomem",
+										MountPath: "/dev/gpiomem",
+									},
+								},
 							},
 						},
 						NodeSelector: map[string]string{
-							"app": "led",
+							"app": "blinkerpi",
+						},
+						Volumes: []apiv1.Volume{
+							{
+								Name: "mem",
+								VolumeSource: apiv1.VolumeSource{
+									HostPath: &apiv1.HostPathVolumeSource{
+										Path: "/dev/mem",
+									},
+								},
+							},
+							{
+								Name: "gpiomem",
+								VolumeSource: apiv1.VolumeSource{
+									HostPath: &apiv1.HostPathVolumeSource{
+										Path: "/dev/gpiomem",
+									},
+								},
+							},
 						},
 					},
 				},
@@ -109,7 +141,7 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Println("Deleting deployment...")
 		deletePolicy := metav1.DeletePropagationForeground
-		if err := deploymentsClient.Delete("led-deployment", &metav1.DeleteOptions{
+		if err := deploymentsClient.Delete("blinker-deployment", &metav1.DeleteOptions{
 			PropagationPolicy: &deletePolicy,
 		}); err != nil {
 			panic(err)
