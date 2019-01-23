@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	cli "gopkg.in/urfave/cli.v2"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apiv1 "k8s.io/api/core/v1"
@@ -19,14 +18,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
-
-type App struct {
-	Node   string `json:"node"`
-	Pin    string `json:"pin"`
-	Status string `json:"status"`
-}
-
-var ctx *cli.Context
 
 func int32Ptr(i int32) *int32 { return &i }
 
