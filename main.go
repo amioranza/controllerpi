@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	cli "gopkg.in/urfave/cli.v2"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -23,6 +25,8 @@ type App struct {
 	Pin    string `json:"pin"`
 	Status string `json:"status"`
 }
+
+var ctx *cli.Context
 
 func int32Ptr(i int32) *int32 { return &i }
 
@@ -36,17 +40,7 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 	kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
 	log.Println("Using kubeconfig file: ", kubeconfig)
 
-	// config kubernetes access, ext cluster, uncomment below
-	// config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-
-	// config kubernetes access, intra cluster, uncomment below
-	config, err := clientcmd.BuildConfigFromFlags("", "")
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := getConfig()
 	deploymentsClient := clientset.AppsV1().Deployments("pi-system")
 
 	nodes, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
@@ -114,7 +108,7 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 	} else {
 		for _, node := range nodes.Items {
 			if node.GetName() == params["node"] {
-				node.Labels["app"] = ""
+				delete(node.Labels, "app")
 				fmt.Printf("%s - %s\n", node.GetName(), node.GetLabels())
 				_, err := clientset.Core().Nodes().Update(&node)
 				if err != nil {
@@ -139,10 +133,24 @@ func SayHello(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<html><h1>HELLO from MimiServer</h1></html>")
 }
 
-// This program lists the pods in a cluster equivalent to
-//
-// kubectl get pods
-//
+func getConfig() (*kubernetes.Clientset, error) {
+	var config *rest.Config
+	var err error
+	kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
+	if kubeconfig == "/root/.kube/config" {
+		log.Println("Using in cluster config")
+		config, err = clientcmd.BuildConfigFromFlags("", "")
+		// in cluster access
+	} else {
+		log.Println("Using out of cluster config")
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return kubernetes.NewForConfig(config)
+}
+
 func main() {
 
 	go func() {
@@ -152,14 +160,9 @@ func main() {
 		// Bootstrap k8s configuration from local 	Kubernetes config file
 		kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
 		log.Println("Using kubeconfig file: ", kubeconfig)
-		// config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-		config, err := clientcmd.BuildConfigFromFlags("", "")
-		if err != nil {
-			log.Fatal(err)
-		}
 
 		// Create an rest client not targeting specific API version
-		clientset, err := kubernetes.NewForConfig(config)
+		clientset, err := getConfig()
 		if err != nil {
 			log.Fatal(err)
 		}
