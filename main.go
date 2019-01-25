@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -24,6 +23,9 @@ func boolPtr(b bool) *bool    { return &b }
 
 func nodeLabel(nodeName string, labelName string, labelValue string, op string) {
 	clientset, err := getConfig()
+	if err != nil {
+		log.Fatalln("failed to get the config:", err)
+	}
 
 	nodes, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
 	if err != nil {
@@ -63,7 +65,7 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 
 	clientset, err := getConfig()
 	if err != nil {
-		log.Fatalln("failed to get nodes:", err)
+		log.Fatalln("failed to get the config:", err)
 	}
 	deploymentsClient := clientset.AppsV1().Deployments("pi-system")
 
@@ -190,17 +192,10 @@ func getConfig() (*kubernetes.Clientset, error) {
 func main() {
 
 	go func() {
-		var ns string
-		flag.StringVar(&ns, "namespace", "", "namespace")
-
-		// Bootstrap k8s configuration from local 	Kubernetes config file
-		kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
-		log.Println("Using kubeconfig file: ", kubeconfig)
-
 		// Create an rest client not targeting specific API version
 		clientset, err := getConfig()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalln("failed to get the config:", err)
 		}
 
 		for {
