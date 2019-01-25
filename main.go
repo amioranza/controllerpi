@@ -22,28 +22,18 @@ import (
 func int32Ptr(i int32) *int32 { return &i }
 func boolPtr(b bool) *bool    { return &b }
 
-func DeployApp(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Raw params: %v", mux.Vars(r))
-	params := mux.Vars(r)
-	status := params["status"]
-	log.Printf("Params: %s\n", params)
-
-	// Bootstrap k8s configuration from local 	Kubernetes config file
-	kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
-	log.Println("Using kubeconfig file: ", kubeconfig)
-
+func nodeLabel(nodeName string, labelName string, labelValue string, op string) {
 	clientset, err := getConfig()
-	deploymentsClient := clientset.AppsV1().Deployments("pi-system")
 
 	nodes, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
 	if err != nil {
 		log.Fatalln("failed to get nodes:", err)
 	}
 
-	if status == "true" {
+	if op == "add" {
 		for _, node := range nodes.Items {
-			if node.GetName() == params["node"] {
-				node.Labels["app"] = "blinkerpi"
+			if node.GetName() == nodeName {
+				node.Labels[labelName] = labelValue
 				fmt.Printf("%s - %s\n", node.GetName(), node.GetLabels())
 				_, err := clientset.Core().Nodes().Update(&node)
 				if err != nil {
@@ -51,6 +41,36 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	} else if op == "del" {
+		for _, node := range nodes.Items {
+			if node.GetName() == nodeName {
+				delete(node.Labels, labelName)
+				fmt.Printf("%s - %s\n", node.GetName(), node.GetLabels())
+				_, err := clientset.Core().Nodes().Update(&node)
+				if err != nil {
+					log.Fatalln("failed to get nodes:", err)
+				}
+			}
+		}
+	}
+}
+
+// DeployApp handles application deployment on k8s
+func DeployApp(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	status := params["status"]
+	log.Printf("Params: %s\n", params)
+
+	clientset, err := getConfig()
+	if err != nil {
+		log.Fatalln("failed to get nodes:", err)
+	}
+	deploymentsClient := clientset.AppsV1().Deployments("pi-system")
+
+	if status == "true" {
+
+		nodeLabel(params["node"], "app", "blinkerpi", "add")
+
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "blinker-deployment",
@@ -129,16 +149,8 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Created deployment %q.\n", result.GetObjectMeta().GetName())
 
 	} else {
-		for _, node := range nodes.Items {
-			if node.GetName() == params["node"] {
-				delete(node.Labels, "app")
-				fmt.Printf("%s - %s\n", node.GetName(), node.GetLabels())
-				_, err := clientset.Core().Nodes().Update(&node)
-				if err != nil {
-					log.Fatalln("failed to get nodes:", err)
-				}
-			}
-		}
+		nodeLabel(params["node"], "app", "blinkerpi", "del")
+
 		fmt.Println("Deleting deployment...")
 		deletePolicy := metav1.DeletePropagationForeground
 		if err := deploymentsClient.Delete("blinker-deployment", &metav1.DeleteOptions{
@@ -151,9 +163,10 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// SayHello says Hello
 func SayHello(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "<html><h1>HELLO from MimiServer</h1></html>")
+	fmt.Fprintf(w, "<html><h1>HELLO from PI-Server</h1></html>")
 }
 
 func getConfig() (*kubernetes.Clientset, error) {
