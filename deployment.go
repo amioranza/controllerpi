@@ -11,6 +11,11 @@ import (
 // func int32Ptr(i int32) *int32 { return &i }
 // func boolPtr(b bool) *bool    { return &b }
 
+// func createContainer(name, image string) (container apiv1.Container) {
+// 	container = apiv1.Container{}
+// 	return container
+// }
+
 func createDeployment(namespace string, name string, labels, nodeSelector map[string]string, containers []apiv1.Container, volumes []apiv1.Volume) (deployment *appsv1.Deployment) {
 	deployment = &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

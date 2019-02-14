@@ -189,6 +189,22 @@ func getConfig() (*kubernetes.Clientset, error) {
 	return kubernetes.NewForConfig(config)
 }
 
+func containerPort(name string, port int32) (ports apiv1.ContainerPort) {
+	cPort := apiv1.ContainerPort{
+		Name:          name,
+		ContainerPort: port,
+	}
+	return cPort
+}
+
+func createContainer(name, image, portName string, portNumber int32) (container apiv1.Container) {
+	container = apiv1.Container{
+		Name:  name,
+		Image: image,
+	}
+	return container
+}
+
 func main() {
 
 	go func() {
