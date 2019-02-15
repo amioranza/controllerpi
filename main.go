@@ -60,6 +60,27 @@ func nodeLabel(nodeName string, labelName string, labelValue string, op string) 
 	}
 }
 
+func createContainer(name, image string) (container apiv1.Container) {
+	container = apiv1.Container{
+		Name:  name,
+		Image: image,
+		SecurityContext: &apiv1.SecurityContext{
+			Privileged: boolPtr(true),
+		},
+		VolumeMounts: []apiv1.VolumeMount{
+			{
+				Name:      "mem",
+				MountPath: "/dev/mem",
+			},
+			{
+				Name:      "gpiomem",
+				MountPath: "/dev/gpiomem",
+			},
+		},
+	}
+	return container
+}
+
 // DeployApp handles application deployment on k8s
 func DeployApp(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
@@ -169,27 +190,6 @@ func getConfig() (*kubernetes.Clientset, error) {
 		return nil, err
 	}
 	return kubernetes.NewForConfig(config)
-}
-
-func createContainer(name, image string) (container apiv1.Container) {
-	container = apiv1.Container{
-		Name:  name,
-		Image: image,
-		SecurityContext: &apiv1.SecurityContext{
-			Privileged: boolPtr(true),
-		},
-		VolumeMounts: []apiv1.VolumeMount{
-			{
-				Name:      "mem",
-				MountPath: "/dev/mem",
-			},
-			{
-				Name:      "gpiomem",
-				MountPath: "/dev/gpiomem",
-			},
-		},
-	}
-	return container
 }
 
 func main() {
