@@ -18,6 +18,9 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+const repository = "amioranza"
+const namespace = "pi-system"
+
 func int32Ptr(i int32) *int32 { return &i }
 func boolPtr(b bool) *bool    { return &b }
 
@@ -67,9 +70,11 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatalln("failed to get the config:", err)
 	}
-	deploymentsClient := clientset.AppsV1().Deployments("pi-system")
+	deploymentsClient := clientset.AppsV1().Deployments(namespace)
 
 	deploymentName := params["app"]+"-deployment"
+
+	containers := []apiv1.Container{createContainer(params["app"],repository+params["app"])}
 
 	if status == "true" {
 
@@ -93,34 +98,9 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 						},
 					},
 					Spec: apiv1.PodSpec{
-						Containers: []apiv1.Container{
-							{
-								Name:  "blinker",
-								Image: "amioranza/blinkerpi:v0",
-								Ports: []apiv1.ContainerPort{
-									{
-										Name:          "http",
-										Protocol:      apiv1.ProtocolTCP,
-										ContainerPort: 80,
-									},
-								},
-								SecurityContext: &apiv1.SecurityContext{
-									Privileged: boolPtr(true),
-								},
-								VolumeMounts: []apiv1.VolumeMount{
-									{
-										Name:      "mem",
-										MountPath: "/dev/mem",
-									},
-									{
-										Name:      "gpiomem",
-										MountPath: "/dev/gpiomem",
-									},
-								},
-							},
-						},
+						Containers: containers,
 						NodeSelector: map[string]string{
-							"app": "blinkerpi",
+							"app": params["app"],
 						},
 						Volumes: []apiv1.Volume{
 							{
@@ -153,7 +133,7 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Created deployment %q.\n", result.GetObjectMeta().GetName())
 
 	} else {
-		nodeLabel(params["node"], "app", "blinkerpi", "del")
+		nodeLabel(params["node"], "app", params["app"], "del")
 
 		fmt.Println("Deleting deployment...")
 		deletePolicy := metav1.DeletePropagationForeground
@@ -191,14 +171,6 @@ func getConfig() (*kubernetes.Clientset, error) {
 	return kubernetes.NewForConfig(config)
 }
 
-func containerPort(name string, port int32) (ports apiv1.ContainerPort) {
-	cPort := apiv1.ContainerPort{
-		Name:          name,
-		ContainerPort: port,
-	}
-	return cPort
-}
-
 func createContainer(name, image string) (container apiv1.Container) {
 	container = apiv1.Container{
 		Name:  name,
@@ -222,9 +194,6 @@ func createContainer(name, image string) (container apiv1.Container) {
 
 func main() {
 
-	container := createContainer("teste","amioranza/blinkerpi")
-	log.Println(container)
-
 	go func() {
 		// Create an rest client not targeting specific API version
 		clientset, err := getConfig()
@@ -233,7 +202,7 @@ func main() {
 		}
 
 		for {
-			pods, err := clientset.CoreV1().Pods("pi-system").List(metav1.ListOptions{})
+			pods, err := clientset.CoreV1().Pods(namespace).List(metav1.ListOptions{})
 			if err != nil {
 				log.Fatalln("failed to get pods:", err)
 			}
@@ -256,6 +225,12 @@ func main() {
 			time.Sleep(5000 * time.Millisecond)
 		}
 	}()
+
+	// r := gin.Default()
+	// r.POST("/:app/:status/:node", deployApp1)
+	// r.GET("/", SayHello1)
+	// r.Run(":8000")
+	
 	// new restfull api server
 	router := mux.NewRouter()
 	router.HandleFunc("/{app}/{status}/{node}", DeployApp).Methods("POST")
