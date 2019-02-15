@@ -1,5 +1,3 @@
-// First try to create a function to deploy kubernetes apps, it relies on some structs
-
 package main
 
 import (

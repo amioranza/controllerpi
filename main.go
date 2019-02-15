@@ -69,25 +69,27 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 	}
 	deploymentsClient := clientset.AppsV1().Deployments("pi-system")
 
+	deploymentName := params["app"]+"-deployment"
+
 	if status == "true" {
 
-		nodeLabel(params["node"], "app", "blinkerpi", "add")
+		nodeLabel(params["node"], "app", params["app"], "add")
 
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "blinker-deployment",
+				Name: deploymentName,
 			},
 			Spec: appsv1.DeploymentSpec{
 				Replicas: int32Ptr(1),
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
-						"app": "blinkerpi",
+						"app": params["app"],
 					},
 				},
 				Template: apiv1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
-							"app": "blinkerpi",
+							"app": params["app"],
 						},
 					},
 					Spec: apiv1.PodSpec{
@@ -155,7 +157,7 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 
 		fmt.Println("Deleting deployment...")
 		deletePolicy := metav1.DeletePropagationForeground
-		if err := deploymentsClient.Delete("blinker-deployment", &metav1.DeleteOptions{
+		if err := deploymentsClient.Delete(deploymentName, &metav1.DeleteOptions{
 			PropagationPolicy: &deletePolicy,
 		}); err != nil {
 			panic(err)
@@ -197,15 +199,31 @@ func containerPort(name string, port int32) (ports apiv1.ContainerPort) {
 	return cPort
 }
 
-func createContainer(name, image, portName string, portNumber int32) (container apiv1.Container) {
+func createContainer(name, image string) (container apiv1.Container) {
 	container = apiv1.Container{
 		Name:  name,
 		Image: image,
+		SecurityContext: &apiv1.SecurityContext{
+			Privileged: boolPtr(true),
+		},
+		VolumeMounts: []apiv1.VolumeMount{
+			{
+				Name:      "mem",
+				MountPath: "/dev/mem",
+			},
+			{
+				Name:      "gpiomem",
+				MountPath: "/dev/gpiomem",
+			},
+		},
 	}
 	return container
 }
 
 func main() {
+
+	container := createContainer("teste","amioranza/blinkerpi")
+	log.Println(container)
 
 	go func() {
 		// Create an rest client not targeting specific API version
@@ -240,7 +258,7 @@ func main() {
 	}()
 	// new restfull api server
 	router := mux.NewRouter()
-	router.HandleFunc("/{pin}/{status}/{node}", DeployApp).Methods("POST")
+	router.HandleFunc("/{app}/{status}/{node}", DeployApp).Methods("POST")
 	router.HandleFunc("/", SayHello).Methods("GET")
 	log.Fatal(http.ListenAndServe(":8000", router))
 
