@@ -20,6 +20,7 @@ import (
 
 const repository = "amioranza"
 const namespace = "pi-system"
+const appversion = ":v0"
 
 func int32Ptr(i int32) *int32 { return &i }
 func boolPtr(b bool) *bool    { return &b }
@@ -91,13 +92,25 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatalln("failed to get the config:", err)
 	}
+
 	deploymentsClient := clientset.AppsV1().Deployments(namespace)
 
-	deploymentName := params["app"]+"-deployment"
+	deploymentName := params["app"] + "-deployment"
 
-	containers := []apiv1.Container{createContainer(params["app"],repository+params["app"])}
+	list, err := deploymentsClient.List(metav1.ListOptions{})
+	if err != nil {
+		log.Fatalln("failed to get deployments:", err)
+	}
+
+	containers := []apiv1.Container{createContainer(params["app"], repository+"/"+params["app"]+appversion)}
 
 	if status == "true" {
+		for _, d := range list.Items {
+			if d.Name == deploymentName && *d.Spec.Replicas > 0 {
+				log.Printf("Deployment already running: %s\n", deploymentName)
+				return
+			}
+		}
 
 		nodeLabel(params["node"], "app", params["app"], "add")
 
@@ -154,6 +167,7 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Created deployment %q.\n", result.GetObjectMeta().GetName())
 
 	} else {
+
 		nodeLabel(params["node"], "app", params["app"], "del")
 
 		fmt.Println("Deleting deployment...")
@@ -171,7 +185,7 @@ func DeployApp(w http.ResponseWriter, r *http.Request) {
 // SayHello says Hello
 func SayHello(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "<html><h1>HELLO from PI-Server</h1></html>")
+	fmt.Fprintf(w, "<html><h1>HELLO FROM PI-SYSTEM</h1></html>")
 }
 
 func getConfig() (*kubernetes.Clientset, error) {
@@ -201,6 +215,8 @@ func main() {
 			log.Fatalln("failed to get the config:", err)
 		}
 
+		deploymentsClient := clientset.AppsV1().Deployments(namespace)
+
 		for {
 			pods, err := clientset.CoreV1().Pods(namespace).List(metav1.ListOptions{})
 			if err != nil {
@@ -210,6 +226,15 @@ func main() {
 			nodes, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
 			if err != nil {
 				log.Fatalln("failed to get nodes:", err)
+			}
+
+			list, err := deploymentsClient.List(metav1.ListOptions{})
+			if err != nil {
+				log.Fatalln("failed to get deployments:", err)
+			}
+			fmt.Println("\n____________________  D E P L O Y S    ______________________")
+			for _, d := range list.Items {
+				fmt.Printf(" * %s (%d replicas)\n", d.Name, *d.Spec.Replicas)
 			}
 
 			// print pods
@@ -230,7 +255,7 @@ func main() {
 	// r.POST("/:app/:status/:node", deployApp1)
 	// r.GET("/", SayHello1)
 	// r.Run(":8000")
-	
+
 	// new restfull api server
 	router := mux.NewRouter()
 	router.HandleFunc("/{app}/{status}/{node}", DeployApp).Methods("POST")
